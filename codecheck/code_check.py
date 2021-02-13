@@ -17,10 +17,17 @@ import fnmatch
 import shlex
 import functools
 
-from typing import List, Union, Dict, Set
+from typing import List, Union, Dict, Set, Tuple
 
 from codecheck.reporter import Reporter
-from codecheck.util import increment_counter, ensure_str_decoded, combine_value_lists
+from codecheck.util import (
+    increment_counter,
+    ensure_str_decoded,
+    combine_value_lists,
+    get_module_name_from_path,
+    get_sys_path_entries_for_mypy,
+)
+
 from codecheck.check_result import CheckResult
 
 
@@ -46,6 +53,7 @@ class CodeChecker:
 
     def __init__(self, root_path: str) -> None:
         self.root_path = root_path
+        self.root_path_realpath = os.path.realpath(root_path)
 
     def parse_args(self) -> None:
         parser = argparse.ArgumentParser(prog=sys.argv[0])
@@ -56,7 +64,24 @@ class CodeChecker:
         self.args = parser.parse_args()
 
     def relativize_path(self, file_path: str) -> str:
-        return os.path.relpath(os.path.realpath(file_path), os.path.realpath(self.root_path))
+        return os.path.relpath(os.path.realpath(file_path), self.root_path_realpath)
+
+    def how_to_import_module(self, file_path: str) -> Tuple[str, List[str]]:
+        """
+        For the given Python module file, helps us identify how we would import that module.
+        Returns a tuple containing the module string to use for import, e.g. somemodule or
+        somemodule.somesubmodule, and the list of directories to be added to sys.path.
+        """
+        module_components = [get_module_name_from_path(file_path)]
+        dir_path = os.path.dirname(os.path.abspath(file_path))
+
+        while (os.path.isfile(os.path.join(dir_path, '__init__.py')) and
+               not os.path.isdir(os.path.join(dir_path, '.git')) and
+               os.path.realpath(dir_path) != self.root_path_realpath):
+            module_components.append(os.path.basename(dir_path))
+            dir_path = os.path.dirname(dir_path)
+
+        return ('.'.join(module_components[::-1]), [dir_path])
 
     def check_file(self, file_path: str, check_type: str) -> CheckResult:
         assert check_type in ALL_CHECK_TYPES
@@ -71,11 +96,11 @@ class CodeChecker:
             args = ['python3', '-m', 'py_compile']
         elif check_type == 'shellcheck':
             args = ['shellcheck', '-x']
-        elif check_type == 'import' and False:  # TODO: re-enable
+        elif check_type == 'import':
             file_name_with_no_ext = os.path.splitext(os.path.basename(file_path))[0]
-            additional_sys_path = [os.path.dirname(os.path.abspath(file_path))]
+            fully_qualified_module_name, additional_sys_path = self.how_to_import_module(file_path)
             args = [
-                'python3', '-c', 'import %s' % file_name_with_no_ext
+                'python3', '-c', 'import %s' % fully_qualified_module_name
             ]
             append_file_path = False
         elif check_type == 'pycodestyle':
@@ -98,17 +123,11 @@ class CodeChecker:
 
         subprocess_env = os.environ.copy()
 
-        # We try to configure MYPYPATH to be the same as PYTHONPATH, but without any site-packages
-        # directories. Otherwise, mypy gives us the following message:
-        #
-        #   .../site-packages is in the MYPYPATH. Please remove it.
-        #   See https://mypy.readthedocs.io/en/latest/running_mypy.html#how-mypy-handles-imports for
-        #   more info.
-        subprocess_env['MYPYPATH'] = ':'.join(additional_sys_path + [
-            sys_path_entry for sys_path_entry in sys.path
-            if os.path.basename(sys_path_entry) != 'site-packages' and
-            '/Library/Frameworks/Python.framework/' not in sys_path_entry
-        ])
+        if check_type == 'mypy':
+            subprocess_env['MYPYPATH'] = ':'.join(
+                additional_sys_path + get_sys_path_entries_for_mypy())
+
+        subprocess_env['PYTHONPATH'] = ':'.join(additional_sys_path + sys.path)
 
         process = subprocess.Popen(
             args,
@@ -165,8 +184,6 @@ class CodeChecker:
                 f"Filtered {original_num_paths} file paths to {len(input_file_paths)} paths "
                 f"using pattern {args.file_pattern}"
             )
-
-        os.environ['MYPYPATH'] = ':'.join(sys.path)
 
         reporter = Reporter(line_width=80)
         checks_by_dir: Dict[str, int] = {}
