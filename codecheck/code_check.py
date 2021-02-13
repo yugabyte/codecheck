@@ -17,24 +17,21 @@ import fnmatch
 import shlex
 import functools
 
-from typing import List, Union, Dict
+from typing import List, Union, Dict, Set
 
 from codecheck.reporter import Reporter
-from codecheck.util import increment_counter, ensure_str_decoded
+from codecheck.util import increment_counter, ensure_str_decoded, combine_value_lists
 from codecheck.check_result import CheckResult
 
 
-NAME_SUFFIX_TO_CHECK_TYPES = {
+NAME_SUFFIX_TO_CHECK_TYPES: Dict[str, List[str]] = {
     '.py': ['mypy', 'compile', 'pycodestyle', 'doctest', 'import'],
     '.sh': ['shellcheck'],
     '_test.py': ['unittest'],
 }
 
-ALL_CHECK_TYPES = functools.reduce(
-    lambda x, y: x | y,
-    [set(check_types) for check_types in NAME_SUFFIX_TO_CHECK_TYPES.values()],
-    set()
-)
+ALL_CHECK_TYPES: List[str] = combine_value_lists(NAME_SUFFIX_TO_CHECK_TYPES)
+
 
 def print_stats(description: str, d: Dict[str, int]) -> None:
     print("%s:\n    %s" % (
@@ -47,17 +44,16 @@ class CodeChecker:
     args: argparse.Namespace
     root_path: str
 
-    def __init__(self, root_path: str):
+    def __init__(self, root_path: str) -> None:
         self.root_path = root_path
 
-    def parse_args(self) -> argparse.Namespace:
+    def parse_args(self) -> None:
         parser = argparse.ArgumentParser(prog=sys.argv[0])
         parser.add_argument('-f', '--file-pattern',
                             default=None,
                             type=str,
                             help='Only analyze files matching this glob-style pattern.')
         self.args = parser.parse_args()
-
 
     def relativize_path(self, file_path: str) -> str:
         return os.path.relpath(os.path.realpath(file_path), os.path.realpath(self.root_path))
@@ -68,14 +64,14 @@ class CodeChecker:
         append_file_path = True
         rel_path = self.relativize_path(file_path)
 
-        additional_sys_path = []
+        additional_sys_path: List[str] = []
         if check_type == 'mypy':
             args = ['mypy', '--config-file', 'mypy.ini']
         elif check_type == 'compile':
             args = ['python3', '-m', 'py_compile']
         elif check_type == 'shellcheck':
             args = ['shellcheck', '-x']
-        elif check_type == 'import':
+        elif check_type == 'import' and False:  # TODO: re-enable
             file_name_with_no_ext = os.path.splitext(os.path.basename(file_path))[0]
             additional_sys_path = [os.path.dirname(os.path.abspath(file_path))]
             args = [
@@ -199,7 +195,8 @@ class CodeChecker:
                 try:
                     check_result = future.result()
                 except Exception as exc:
-                    print("Check '%s' for %s generated an exception: %s" % (check_type, file_path, exc))
+                    print("Check '%s' for %s generated an exception: %s" %
+                          (check_type, file_path, exc))
                     increment_counter(checks_by_result, 'failure')
                 else:
                     reporter.print_check_result(check_result)
