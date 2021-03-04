@@ -228,7 +228,11 @@ class CodeChecker:
         return is_success
 
 
-if __name__ == '__main__':
+def main() -> None:
     checker = CodeChecker('.')
     successful = checker.run()
     sys.exit(0 if successful else 1)
+
+
+if __name__ == '__main__':
+    main()

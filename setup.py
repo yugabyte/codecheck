@@ -29,5 +29,8 @@ if __name__ == '__main__':
                 'mypy',
                 'twine'
             ]
+        },
+        entry_points={
+            'console_scripts': ['codecheck=codecheck.code_check:main'],
         }
     )
