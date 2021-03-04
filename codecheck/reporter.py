@@ -5,6 +5,7 @@ from codecheck.check_result import CheckResult
 
 
 class Reporter:
+
     def __init__(self, line_width: int):
         self.line_width = line_width
 

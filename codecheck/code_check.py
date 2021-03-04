@@ -5,20 +5,16 @@ Checks code in this repository using various methods (MyPy, importing modules, s
 pycodestyle). Runs multiple checks in parallel.
 """
 
-import concurrent.futures
-import urllib.request
-import glob
-import os
-import sys
-import subprocess
-import time
 import argparse
+import concurrent.futures
 import fnmatch
-import shlex
-import functools
+import os
+import subprocess
+import sys
+import time
+from typing import List, Dict, Tuple
 
-from typing import List, Union, Dict, Set, Tuple
-
+from codecheck.check_result import CheckResult
 from codecheck.reporter import Reporter
 from codecheck.util import (
     increment_counter,
@@ -27,9 +23,6 @@ from codecheck.util import (
     get_module_name_from_path,
     get_sys_path_entries_for_mypy,
 )
-
-from codecheck.check_result import CheckResult
-
 
 NAME_SUFFIX_TO_CHECK_TYPES: Dict[str, List[str]] = {
     '.py': ['mypy', 'compile', 'pycodestyle', 'doctest', 'import'],
@@ -97,7 +90,6 @@ class CodeChecker:
         elif check_type == 'shellcheck':
             args = ['shellcheck', '-x']
         elif check_type == 'import':
-            file_name_with_no_ext = os.path.splitext(os.path.basename(file_path))[0]
             fully_qualified_module_name, additional_sys_path = self.how_to_import_module(file_path)
             args = [
                 'python3', '-c', 'import %s' % fully_qualified_module_name
