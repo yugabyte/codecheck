@@ -24,4 +24,3 @@ on the file type.
 Codecheck uses the following approaches to detect the set of files:
 
 - `git ls-files`
--
