@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from typing import List, Dict, Tuple
 
 from codecheck.check_result import CheckResult
@@ -50,10 +51,15 @@ class CodeChecker:
 
     def parse_args(self) -> None:
         parser = argparse.ArgumentParser(prog=sys.argv[0])
-        parser.add_argument('-f', '--file-pattern',
-                            default=None,
-                            type=str,
-                            help='Only analyze files matching this glob-style pattern.')
+        parser.add_argument(
+            '-f', '--file-pattern',
+            default=None,
+            type=str,
+            help='Only analyze files matching this glob-style pattern.')
+        parser.add_argument(
+            '-v', '--verbose',
+            action='store_true',
+            help='Verbose output')
         self.args = parser.parse_args()
 
     def relativize_path(self, file_path: str) -> str:
@@ -82,7 +88,19 @@ class CodeChecker:
         append_file_path = True
         rel_path = self.relativize_path(file_path)
 
+        extra_messages = []
+
+        fully_qualified_module_name = None
         additional_sys_path: List[str] = []
+        if file_path.endswith('.py'):
+            fully_qualified_module_name, additional_sys_path = self.how_to_import_module(file_path)
+            if self.args.verbose:
+                extra_messages.append(
+                    f'For file {os.path.basename(file_path)} (full path {file_path}): '
+                    f'fully_qualified_module_name={fully_qualified_module_name}, '
+                    f'additional_sys_path={additional_sys_path}.'
+                )
+
         if check_type == 'mypy':
             args = ['mypy', '--config-file', 'mypy.ini']
         elif check_type == 'compile':
@@ -90,7 +108,6 @@ class CodeChecker:
         elif check_type == 'shellcheck':
             args = ['shellcheck', '-x']
         elif check_type == 'import':
-            fully_qualified_module_name, additional_sys_path = self.how_to_import_module(file_path)
             args = [
                 'python3', '-c', 'import %s' % fully_qualified_module_name
             ]
@@ -133,7 +150,8 @@ class CodeChecker:
             file_path=file_path,
             stdout=ensure_str_decoded(stdout),
             stderr=ensure_str_decoded(stderr),
-            returncode=process.returncode)
+            returncode=process.returncode,
+            extra_messages=extra_messages)
 
     def run(self) -> bool:
         self.parse_args()
@@ -204,9 +222,11 @@ class CodeChecker:
                 try:
                     check_result = future.result()
                 except Exception as exc:
-                    print("Check '%s' for %s generated an exception: %s" %
-                          (check_type, file_path, exc))
+                    print(
+                        f"Check '{check_type}' for '{file_path}' generated an exception: "
+                        f"{traceback.format_exc()}")
                     increment_counter(checks_by_result, 'failure')
+                    is_success = False
                 else:
                     reporter.print_check_result(check_result)
                     if check_result.returncode == 0:

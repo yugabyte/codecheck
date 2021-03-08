@@ -40,5 +40,8 @@ class Reporter:
             s += '\n'
             s += check_result.stderr
 
+        if check_result.extra_messages:
+            s += '\n' + '\n'.join(check_result.extra_messages)
+
         s += '\n'
         self.write(s)
