@@ -43,7 +43,8 @@ def is_valid_mypy_path_entry(path_entry: str) -> bool:
         os.path.basename(path_entry) != 'site-packages' and
         '/site-packages/' not in path_entry and
         # macOS-specific
-        '/Library/Frameworks/Python.framework/' not in path_entry
+        '/Library/Frameworks/Python.framework/' not in path_entry and
+        not os.path.exists(os.path.join(path_entry, 'typing.py'))
     )
 
 
