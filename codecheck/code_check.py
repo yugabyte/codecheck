@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 import traceback
+import logging
 from typing import List, Dict, Tuple
 
 from codecheck.check_result import CheckResult
@@ -212,6 +213,10 @@ class CodeChecker:
                         increment_counter(checks_by_dir, rel_dir)
                         increment_counter(checks_by_type, check_type)
 
+        if self.args.verbose:
+            logging.info(
+                "sys.path entries to be included in MYPYPATH: %s",
+                get_sys_path_entries_for_mypy())
         with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
             future_to_check_input = {
                 executor.submit(self.check_file, file_path, check_type): (file_path, check_type)
@@ -249,6 +254,10 @@ class CodeChecker:
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(filename)s:%(lineno)d] %(asctime)s %(levelname)s: %(message)s")
+
     checker = CodeChecker('.')
     successful = checker.run()
     sys.exit(0 if successful else 1)
