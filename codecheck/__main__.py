@@ -1,5 +1,3 @@
-#!/usr/bin/env bash
-
 # Copyright (c) Yugabyte, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
@@ -12,7 +10,9 @@
 # or implied. See the License for the specific language governing permissions and limitations
 # under the License.
 
-. venv/bin/activate
-set -euo pipefail
-cd "${BASH_SOURCE[0]%/*}"/..
-python3 codecheck/code_check.py "$@"
+
+from codecheck import code_check
+
+
+if __name__ == '__main__':
+    code_check.main()
