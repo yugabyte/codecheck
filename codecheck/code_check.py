@@ -119,6 +119,12 @@ class CodeChecker:
             help=f'Configuration path ({DEFAULT_CONF_FILE_NAME} by default).',
             dest='config_path',
             default=DEFAULT_CONF_FILE_NAME)
+        parser.add_argument(
+            '--python-interpreter',
+            help='Python interpreter to use to invoke checks (must be Python 3.6 or later). '
+                 'Could be an interpreter in a virtual environment. Default: "python3".',
+            default='python3')
+
         self.args = parser.parse_args()
 
     def relativize_path(self, file_path: str) -> str:
@@ -161,14 +167,14 @@ class CodeChecker:
                 )
 
         if check_type == 'mypy':
-            args = ['mypy', '--config-file', 'mypy.ini']
+            args = [self.args.python_interpreter, '-m', 'mypy', '--config-file', 'mypy.ini']
         elif check_type == 'compile':
-            args = ['python3', '-m', 'py_compile']
+            args = [self.args.python_interpreter, '-m', 'py_compile']
         elif check_type == 'shellcheck':
             args = ['shellcheck', '-x']
         elif check_type == 'import':
             args = [
-                'python3', '-c', f'import {fully_qualified_module_name}'
+                self.args.python_interpreter, '-c', f'import {fully_qualified_module_name}'
             ]
             append_file_path = False
         elif check_type == 'pycodestyle':
@@ -182,9 +188,9 @@ class CodeChecker:
                     'Could not identify the fully-qualified module name to use to invoke the '
                     f'test {file_path}')
 
-            args = ['python3', '-m', 'unittest', fully_qualified_module_name]
+            args = [self.args.python_interpreter, '-m', 'unittest', fully_qualified_module_name]
         elif check_type == 'doctest':
-            args = ['python3', '-m', 'doctest']
+            args = [self.args.python_interpreter, '-m', 'doctest']
         else:
             raise ValueError(f"Unknown check type: {check_type}")
 
