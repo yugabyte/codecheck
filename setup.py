@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
     setup(
         name='codecheck',
-        version='1.0.7',
+        version='1.0.8',
         url='https://github.com/yugabyte/codecheck',
         author='Mikhail Bautin',
         author_email='mbautin@users.noreply.github.com',
