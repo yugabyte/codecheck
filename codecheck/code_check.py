@@ -27,7 +27,10 @@ import time
 import traceback
 import logging
 import multiprocessing
-from typing import List, Dict, Tuple
+import shutil
+from configparser import ConfigParser
+
+from typing import List, Dict, Tuple, Set
 
 from codecheck.check_result import CheckResult
 from codecheck.reporter import Reporter
@@ -47,6 +50,8 @@ NAME_SUFFIX_TO_CHECK_TYPES: Dict[str, List[str]] = {
 
 ALL_CHECK_TYPES: List[str] = combine_value_lists(NAME_SUFFIX_TO_CHECK_TYPES)
 
+DEFAULT_CONF_FILE_NAME = 'codecheck.ini'
+
 
 def print_stats(description: str, d: Dict[str, int]) -> None:
     print("%s:\n    %s" % (
@@ -55,7 +60,35 @@ def print_stats(description: str, d: Dict[str, int]) -> None:
     ))
 
 
+class CodeCheckConfig:
+    mypy_config_path: str
+    disabled_check_types: Set[str]
+
+    def __init__(self) -> None:
+        self.mypy_config_path = 'mypy.ini'
+        self.disabled_check_types = set()
+
+    def load(self, file_path: str) -> None:
+        parsed_ini = ConfigParser()
+        parsed_ini.read(file_path)
+
+        sections = parsed_ini.sections()
+        if 'default' in sections:
+            default_section = parsed_ini['default']
+            mypy_config_path = default_section.get('mypy_config')
+            if mypy_config_path is not None:
+                self.mypy_config_path = mypy_config_path
+
+        if 'checks' in sections:
+            checks_section = parsed_ini['checks']
+            for check_type in ALL_CHECK_TYPES:
+                is_check_enabled = checks_section.get(check_type)
+                if is_check_enabled is not None and not checks_section.getboolean(check_type):
+                    self.disabled_check_types.add(check_type)
+
+
 class CodeChecker:
+    config: CodeCheckConfig
     args: argparse.Namespace
     root_path: str
 
@@ -81,6 +114,11 @@ class CodeChecker:
             help='How many checks to run in parallel. Defaults to the number of CPUs/vCPUs '
                  f'({num_cpus} on this machine).',
             default=num_cpus)
+        parser.add_argument(
+            '-c', '--config',
+            help=f'Configuration path ({DEFAULT_CONF_FILE_NAME} by default).',
+            dest='config_path',
+            default=DEFAULT_CONF_FILE_NAME)
         self.args = parser.parse_args()
 
     def relativize_path(self, file_path: str) -> str:
@@ -130,7 +168,7 @@ class CodeChecker:
             args = ['shellcheck', '-x']
         elif check_type == 'import':
             args = [
-                'python3', '-c', 'import %s' % fully_qualified_module_name
+                'python3', '-c', f'import {fully_qualified_module_name}'
             ]
             append_file_path = False
         elif check_type == 'pycodestyle':
@@ -139,10 +177,12 @@ class CodeChecker:
         elif check_type == 'unittest':
             append_file_path = False
             rel_path_components = os.path.splitext(rel_path)[0].split('/')
-            assert rel_path_components[0] == 'python', (
-                "Expected unit tests to be in the 'python' directory: %s" % rel_path)
-            test_module = '.'.join(rel_path_components[1:])
-            args = ['python3', '-m', 'unittest', test_module]
+            if fully_qualified_module_name is None:
+                raise ValueError(
+                    'Could not identify the fully-qualified module name to use to invoke the '
+                    f'test {file_path}')
+
+            args = ['python3', '-m', 'unittest', fully_qualified_module_name]
         elif check_type == 'doctest':
             args = ['python3', '-m', 'doctest']
         else:
@@ -181,8 +221,19 @@ class CodeChecker:
             return False
         return True
 
+    def init_config(self) -> None:
+        self.config = CodeCheckConfig()
+        if os.path.exists(self.args.config_path):
+            if self.args.verbose:
+                logging.info(f"Loading configuration from {self.args.config_path}")
+            self.config.load(self.args.config_path)
+        else:
+            if self.args.verbose:
+                logging.info(f"Configuration file not found: {self.args.config_path}")
+
     def run(self) -> bool:
         self.parse_args()
+        self.init_config()
         args = self.args
 
         start_time = time.time()
@@ -197,12 +248,6 @@ class CodeChecker:
                 file_path.endswith(all_checked_suffixes)
             )
         ])
-
-        # for dirpath, dirnames, filenames in os.walk(
-        #         os.path.join(self.root_path, 'python')):
-        #     for file_name in filenames:
-        #         if file_name.endswith('.py'):
-        #             input_file_paths.add(os.path.join(dirpath, file_name))
 
         # Filter the set of input paths to only keep existing files that are not symlinks.
         input_file_paths = set(
@@ -231,10 +276,17 @@ class CodeChecker:
         is_success = True
 
         check_inputs = []
+        if self.args.verbose:
+            if self.config.disabled_check_types:
+                logging.info(f"Disabled check types: {sorted(self.config.disabled_check_types)}")
+
         for file_path in input_file_paths:
             rel_dir = os.path.dirname(self.relativize_path(file_path)) or 'root'
             for file_name_suffix, check_types in NAME_SUFFIX_TO_CHECK_TYPES.items():
                 for check_type in check_types:
+                    if check_type in self.config.disabled_check_types:
+                        continue
+
                     if (file_path.endswith(file_name_suffix) and
                             self._allow_check_for_file_path(check_type, file_path)):
                         check_inputs.append((file_path, check_type))
@@ -245,6 +297,7 @@ class CodeChecker:
             logging.info(
                 "sys.path entries to be included in MYPYPATH: %s",
                 get_sys_path_entries_for_mypy())
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallelism) as executor:
             future_to_check_input = {
                 executor.submit(self.check_file, file_path, check_type): (file_path, check_type)
