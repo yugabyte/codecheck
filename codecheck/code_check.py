@@ -26,6 +26,7 @@ import sys
 import time
 import traceback
 import logging
+import multiprocessing
 from typing import List, Dict, Tuple
 
 from codecheck.check_result import CheckResult
@@ -73,6 +74,13 @@ class CodeChecker:
             '-v', '--verbose',
             action='store_true',
             help='Verbose output')
+        num_cpus = multiprocessing.cpu_count()
+        parser.add_argument(
+            '-j', '--parallelism',
+            type=int,
+            help='How many checks to run in parallel. Defaults to the number of CPUs/vCPUs '
+                 f'({num_cpus} on this machine).',
+            default=num_cpus)
         self.args = parser.parse_args()
 
     def relativize_path(self, file_path: str) -> str:
@@ -166,6 +174,13 @@ class CodeChecker:
             returncode=process.returncode,
             extra_messages=extra_messages)
 
+    def _allow_check_for_file_path(self, check_type: str, file_path: str) -> bool:
+        assert check_type in ALL_CHECK_TYPES
+        file_name = os.path.basename(file_path)
+        if file_name == '__main__.py' and check_type == 'doctest':
+            return False
+        return True
+
     def run(self) -> bool:
         self.parse_args()
         args = self.args
@@ -220,7 +235,8 @@ class CodeChecker:
             rel_dir = os.path.dirname(self.relativize_path(file_path)) or 'root'
             for file_name_suffix, check_types in NAME_SUFFIX_TO_CHECK_TYPES.items():
                 for check_type in check_types:
-                    if file_path.endswith(file_name_suffix):
+                    if (file_path.endswith(file_name_suffix) and
+                            self._allow_check_for_file_path(check_type, file_path)):
                         check_inputs.append((file_path, check_type))
                         increment_counter(checks_by_dir, rel_dir)
                         increment_counter(checks_by_type, check_type)
@@ -229,7 +245,7 @@ class CodeChecker:
             logging.info(
                 "sys.path entries to be included in MYPYPATH: %s",
                 get_sys_path_entries_for_mypy())
-        with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallelism) as executor:
             future_to_check_input = {
                 executor.submit(self.check_file, file_path, check_type): (file_path, check_type)
                 for (file_path, check_type) in check_inputs
