@@ -62,12 +62,10 @@ def print_stats(description: str, d: Dict[str, int]) -> None:
 
 class CodeCheckConfig:
     mypy_config_path: str
-    pycodestyle_config_path: str
     disabled_check_types: Set[str]
 
     def __init__(self) -> None:
         self.mypy_config_path = 'mypy.ini'
-        self.pycodestyle_config_path = 'pycodestyle.ini'
         self.disabled_check_types = set()
 
     def load(self, file_path: str) -> None:
@@ -78,14 +76,9 @@ class CodeCheckConfig:
         if 'default' in sections:
             default_section = parsed_ini['default']
 
-            # TODO: deduplicate this pattern.
             mypy_config_path = default_section.get('mypy_config')
             if mypy_config_path is not None:
                 self.mypy_config_path = mypy_config_path
-
-            pycodestyle_config_path = default_section.get('pycodestyle_config')
-            if pycodestyle_config_path is not None:
-                self.pycodestyle_config_path = pycodestyle_config_path
 
         if 'checks' in sections:
             checks_section = parsed_ini['checks']
@@ -186,8 +179,7 @@ class CodeChecker:
             ]
             append_file_path = False
         elif check_type == 'pycodestyle':
-            args = [self.args.python_interpreter, '-m', 'pycodestyle',
-                    f'--config={self.config.pycodestyle_config_path}']
+            args = [self.args.python_interpreter, '-m', 'pycodestyle']
         elif check_type == 'unittest':
             append_file_path = False
             rel_path_components = os.path.splitext(rel_path)[0].split('/')
