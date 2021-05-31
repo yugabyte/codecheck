@@ -80,8 +80,9 @@ shellcheck = off
 
 ## Customizing pycodestyle configuration
 
-Different projects have different coding styles. You can create a file `pycodestyle.ini` in the
-project directory, as shown below.
+Different projects have different coding styles. Pycodestyle reads per-project configuration from
+tox.ini or setup.cfg as described at https://pycodestyle.pycqa.org/en/latest/intro.html so you can
+use those files to customize the style for your project, e.g.
 
 ```
 [pycodestyle]
