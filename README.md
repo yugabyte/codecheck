@@ -1,5 +1,7 @@
 # codecheck
 
+https://pypi.org/project/codecheck/
+
 Codecheck is a tool for running various kinds of checkers on a set of source code files in parallel.
 These checks allow to find lots of issues with code very quickly on a developer's workstation,
 before running expensive build pipelines. But of course this can also be run as the first step
