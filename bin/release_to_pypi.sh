@@ -19,4 +19,10 @@ cd "${BASH_SOURCE[0]%/*}"/..
 
 rm -f dist/*
 python3 setup.py sdist
-python3 -m twine upload dist/*
+if which twine &>/dev/null; then
+  twine_cmd=twine
+else
+  twine_cmd="python3 -m twine"
+fi
+
+$twine upload dist/*
