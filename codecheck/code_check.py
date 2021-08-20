@@ -27,10 +27,12 @@ import time
 import traceback
 import logging
 import multiprocessing
-import shutil
+import re
+
+import configparser
 from configparser import ConfigParser
 
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict, Tuple, Set, Optional
 
 from codecheck.check_result import CheckResult
 from codecheck.reporter import Reporter
@@ -63,29 +65,60 @@ def print_stats(description: str, d: Dict[str, int]) -> None:
 class CodeCheckConfig:
     mypy_config_path: str
     disabled_check_types: Set[str]
+    included_regex_list: Optional[List[re.Pattern]]
 
     def __init__(self) -> None:
         self.mypy_config_path = 'mypy.ini'
         self.disabled_check_types = set()
+        self.included_regex_list = None
 
     def load(self, file_path: str) -> None:
         parsed_ini = ConfigParser()
         parsed_ini.read(file_path)
 
-        sections = parsed_ini.sections()
-        if 'default' in sections:
-            default_section = parsed_ini['default']
+        def get_section(section_name: str) -> Optional[configparser.SectionProxy]:
+            if section_name in parsed_ini.sections():
+                return parsed_ini[section_name]
+            return None
 
+        def get_multi_line_regex_list(
+                section: configparser.SectionProxy,
+                field_name: str) -> List[re.Pattern]:
+            field_value = section.get(field_name)
+            if field_value is None:
+                return None
+            re_strings = field_value.strip().split('\n')
+            result: List[re.Pattern] = []
+            for re_str in re_strings:
+                re_str = re_str.strip()
+                if not re_str:
+                    continue
+                try:
+                    compiled_re = re.compile(re_str)
+                except Exception as ex:
+                    logging.exception("Failed to compile regular expression: %s", re_str)
+                    raise ex
+                result.append(compiled_re)
+
+            return result
+
+        default_section = get_section('default')
+        if default_section:
             mypy_config_path = default_section.get('mypy_config')
             if mypy_config_path is not None:
                 self.mypy_config_path = mypy_config_path
 
-        if 'checks' in sections:
-            checks_section = parsed_ini['checks']
+        checks_section = get_section('checks')
+        if checks_section:
             for check_type in ALL_CHECK_TYPES:
                 is_check_enabled = checks_section.get(check_type)
                 if is_check_enabled is not None and not checks_section.getboolean(check_type):
                     self.disabled_check_types.add(check_type)
+
+        files_section = get_section('files')
+        if files_section:
+            self.included_regex_list = get_multi_line_regex_list(
+                files_section, 'included_regex_list')
 
 
 class CodeChecker:
@@ -237,20 +270,39 @@ class CodeChecker:
             if self.args.verbose:
                 logging.info(f"Configuration file not found: {self.args.config_path}")
 
+    def filter_with_glob_patterns(
+            self, initial_list: List[str],
+            re_pattern_list: List[re.Pattern]) -> List[str]:
+        filtered_list = [
+            item for item in initial_list
+            if any(re_pattern.match(item) for re_pattern in re_pattern_list)
+        ]
+        if self.args.verbose:
+            logging.info(
+                "Filtered %d files to %d using the regular expressions %s",
+                len(initial_list),
+                len(filtered_list),
+                [re_pattern.pattern for re_pattern in re_pattern_list])
+        return filtered_list
+
     def run(self) -> bool:
         self.parse_args()
         self.init_config()
         args = self.args
 
         start_time = time.time()
-        git_ls_files = ensure_str_decoded(subprocess.check_output(
+        file_list: List[str] = ensure_str_decoded(subprocess.check_output(
             ['git', 'ls-files'],
             cwd=self.root_path
         )).split('\n')
 
+        if self.config.included_regex_list is not None:
+            file_list = self.filter_with_glob_patterns(
+                file_list, self.config.included_regex_list)
+
         all_checked_suffixes = tuple(sorted(NAME_SUFFIX_TO_CHECK_TYPES.keys()))
         input_file_paths = set([
-            os.path.abspath(file_path) for file_path in git_ls_files if (
+            os.path.abspath(file_path) for file_path in file_list if (
                 file_path.endswith(all_checked_suffixes)
             )
         ])
@@ -304,6 +356,7 @@ class CodeChecker:
                 "sys.path entries to be included in MYPYPATH: %s",
                 get_sys_path_entries_for_mypy())
 
+        num_checks = len(check_inputs)
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallelism) as executor:
             future_to_check_input = {
                 executor.submit(self.check_file, file_path, check_type): (file_path, check_type)
@@ -327,15 +380,21 @@ class CodeChecker:
                         increment_counter(checks_by_result, 'failure')
                         is_success = False
 
-        print_stats("Checks by directory (relative to repo root)", checks_by_dir)
-        print_stats("Checks by type", checks_by_type)
-        print_stats("Checks by result", checks_by_result)
+        if checks_by_dir:
+            print_stats("Checks by directory (relative to repo root)", checks_by_dir)
+
+        if checks_by_type:
+            print_stats("Checks by type", checks_by_type)
+
+        if checks_by_result:
+            print_stats("Checks by result", checks_by_result)
+
         print("Elapsed time: %.1f seconds" % (time.time() - start_time))
         print()
         if is_success:
-            print("All checks are successful")
+            print(f"All {num_checks} checks are successful")
         else:
-            print("Some checks failed")
+            print(f"Some checks failed")
         print()
         return is_success
 

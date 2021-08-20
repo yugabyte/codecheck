@@ -31,6 +31,7 @@ if __name__ == '__main__':
         author_email='mbautin@users.noreply.github.com',
         description='A tool for quickly running checks on a set of source code files in a project',
         packages=find_packages(),
+        package_data={'compiler_identification': ['py.typed']},
         install_requires=[],
         long_description=long_description,
         long_description_content_type='text/markdown',
