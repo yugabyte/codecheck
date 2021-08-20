@@ -25,4 +25,4 @@ else
   twine_cmd="python3 -m twine"
 fi
 
-$twine upload dist/*
+$twine_cmd upload dist/*
