@@ -78,6 +78,12 @@ pycodestyle_config = <your_custom_pycodestyle_config_name>.ini
 [checks]
 # You can turn some of the checks off (all checks are on by default).
 shellcheck = off
+
+[files]
+# To restrict the set of files to check, specify one or more regular expressions:
+included_regex_list =
+    ^.*[.]py$
+    ^.*[.]sh$
 ```
 
 ## Customizing pycodestyle configuration
