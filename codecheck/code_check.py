@@ -201,7 +201,11 @@ class CodeChecker:
                 )
 
         if check_type == 'mypy':
-            args = [self.args.python_interpreter, '-m', 'mypy', '--config-file', 'mypy.ini']
+            args = [
+                self.args.python_interpreter,
+                '-m', 'mypy',
+                '--config-file=%s' % self.config.mypy_config_path,
+                '--cache-dir=/dev/null']
         elif check_type == 'compile':
             args = [self.args.python_interpreter, '-m', 'py_compile']
         elif check_type == 'shellcheck':
