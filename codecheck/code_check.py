@@ -54,6 +54,8 @@ ALL_CHECK_TYPES: List[str] = combine_value_lists(NAME_SUFFIX_TO_CHECK_TYPES)
 
 DEFAULT_CONF_FILE_NAME = 'codecheck.ini'
 
+NUM_REMAINING_CHECKS_TO_SHOW = 5
+
 
 def print_stats(description: str, d: Dict[str, int]) -> None:
     print("%s:\n    %s" % (
@@ -141,6 +143,10 @@ class CodeChecker:
             '-v', '--verbose',
             action='store_true',
             help='Verbose output')
+        parser.add_argument(
+            '--detailed-progress',
+            action='store_true',
+            help='Show detailed progress information (even more verbose)')
         num_cpus = multiprocessing.cpu_count()
         parser.add_argument(
             '-j', '--parallelism',
@@ -361,11 +367,16 @@ class CodeChecker:
                 get_sys_path_entries_for_mypy())
 
         num_checks = len(check_inputs)
+        if self.args.verbose:
+            logging.info("Running %d checks", len(check_inputs))
+        pending_checks: Set[Tuple[str, str]] = set(check_inputs)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallelism) as executor:
             future_to_check_input = {
                 executor.submit(self.check_file, file_path, check_type): (file_path, check_type)
                 for (file_path, check_type) in check_inputs
             }
+            num_completed = 0
             for future in concurrent.futures.as_completed(future_to_check_input):
                 file_path, check_type = future_to_check_input[future]
                 try:
@@ -383,6 +394,19 @@ class CodeChecker:
                     else:
                         increment_counter(checks_by_result, 'failure')
                         is_success = False
+                num_completed += 1
+                pending_checks.remove((file_path, check_type))
+                if self.args.detailed_progress:
+                    remaining_checks_to_show = sorted(pending_checks)[:NUM_REMAINING_CHECKS_TO_SHOW]
+                    logging.info(
+                        "%d out of %d checks completed (%.1f%%), %d checks remaining, "
+                        "%d of them are: %s",
+                        num_completed,
+                        len(future_to_check_input),
+                        num_completed * 100.0 / len(future_to_check_input),
+                        len(pending_checks),
+                        len(remaining_checks_to_show),
+                        remaining_checks_to_show)
 
         if checks_by_dir:
             print_stats("Checks by directory (relative to repo root)", checks_by_dir)
