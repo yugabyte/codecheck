@@ -64,10 +64,16 @@ def print_stats(description: str, d: Dict[str, int]) -> None:
     ))
 
 
+if sys.version_info <= (3, 7):
+    CompiledRE = Any
+else:
+    CompiledRE = re.Pattern
+
+
 class CodeCheckConfig:
     mypy_config_path: str
     disabled_check_types: Set[str]
-    included_regex_list: Optional[List[re.Pattern]]
+    included_regex_list: Optional[List[CompiledRE]]
 
     def __init__(self) -> None:
         self.mypy_config_path = 'mypy.ini'
@@ -85,12 +91,12 @@ class CodeCheckConfig:
 
         def get_multi_line_regex_list(
                 section: configparser.SectionProxy,
-                field_name: str) -> List[re.Pattern]:
+                field_name: str) -> List[CompiledRE]:
             field_value = section.get(field_name)
             if field_value is None:
                 return None
             re_strings = field_value.strip().split('\n')
-            result: List[re.Pattern] = []
+            result: List[CompiledRE] = []
             for re_str in re_strings:
                 re_str = re_str.strip()
                 if not re_str:
@@ -282,7 +288,7 @@ class CodeChecker:
 
     def filter_with_glob_patterns(
             self, initial_list: List[str],
-            re_pattern_list: List[re.Pattern]) -> List[str]:
+            re_pattern_list: List[CompiledRE]) -> List[str]:
         filtered_list = [
             item for item in initial_list
             if any(re_pattern.match(item) for re_pattern in re_pattern_list)
