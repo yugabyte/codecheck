@@ -32,7 +32,7 @@ import re
 import configparser
 from configparser import ConfigParser
 
-from typing import List, Dict, Tuple, Set, Optional
+from typing import List, Dict, Tuple, Set, Optional, Any
 
 from codecheck.check_result import CheckResult
 from codecheck.reporter import Reporter
