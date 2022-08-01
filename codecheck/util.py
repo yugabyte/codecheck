@@ -59,10 +59,3 @@ def is_valid_mypy_path_entry(path_entry: str) -> bool:
         '/Library/Frameworks/Python.framework/' not in path_entry and
         not os.path.exists(os.path.join(path_entry, 'typing.py'))
     )
-
-
-def get_sys_path_entries_for_mypy() -> List[str]:
-    return [
-        sys_path_entry for sys_path_entry in sys.path
-        if is_valid_mypy_path_entry(sys_path_entry)
-    ]

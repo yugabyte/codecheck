@@ -41,7 +41,6 @@ from codecheck.util import (
     ensure_str_decoded,
     combine_value_lists,
     get_module_name_from_path,
-    get_sys_path_entries_for_mypy,
 )
 
 NAME_SUFFIX_TO_CHECK_TYPES: Dict[str, List[str]] = {
@@ -248,12 +247,6 @@ class CodeChecker:
 
         subprocess_env = os.environ.copy()
 
-        if check_type == 'mypy':
-            subprocess_env['MYPYPATH'] = ':'.join(
-                additional_sys_path + get_sys_path_entries_for_mypy())
-
-        subprocess_env['PYTHONPATH'] = ':'.join(additional_sys_path + sys.path)
-
         process = subprocess.Popen(
             args,
             stdout=subprocess.PIPE,
@@ -366,11 +359,6 @@ class CodeChecker:
                         check_inputs.append((file_path, check_type))
                         increment_counter(checks_by_dir, rel_dir)
                         increment_counter(checks_by_type, check_type)
-
-        if self.args.verbose:
-            logging.info(
-                "sys.path entries to be included in MYPYPATH: %s",
-                get_sys_path_entries_for_mypy())
 
         num_checks = len(check_inputs)
         if self.args.verbose:
