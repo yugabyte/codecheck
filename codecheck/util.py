@@ -11,7 +11,7 @@
 # under the License.
 
 
-from typing import Dict, Union, Set, List
+from typing import Dict, Union, Set, List, Optional
 
 import os
 import sys
@@ -66,3 +66,24 @@ def is_valid_mypy_path_entry(path_entry: str) -> bool:
         '/Library/Frameworks/Python.framework/' not in path_entry and
         not os.path.exists(os.path.join(path_entry, 'typing.py'))
     )
+
+
+def prepend_path_entries(new_entries: List[str], existing_path: Optional[str]) -> str:
+    """
+    Prepend the given entries to the given PYTHONPATH or MYPYPATH-style string.
+
+    >>> prepend_path_entries(['~/myproject'], None)
+    '~/myproject'
+    >>> prepend_path_entries(['~/myproject'], '')
+    '~/myproject'
+    >>> prepend_path_entries(['~/myproject'], '~/some_existing_dir')
+    '~/myproject:~/some_existing_dir'
+    """
+    if existing_path is None:
+        existing_path = ''
+    else:
+        existing_path = existing_path.strip()
+    if existing_path:
+        existing_path = ':' + existing_path
+    assert isinstance(new_entries, list), "Invalid list of new entries: %s" % new_entries
+    return ':'.join(new_entries) + existing_path

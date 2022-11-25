@@ -38,6 +38,7 @@ from codecheck.util import (
     ensure_str_decoded,
     get_module_name_from_path,
     CompiledRE,
+    prepend_path_entries,
 )
 from codecheck.config import CodeCheckConfig
 from codecheck.constants import (
@@ -137,7 +138,6 @@ class CodeChecker:
         assert check_type in ALL_CHECK_TYPES
 
         append_file_path = True
-        rel_path = self.relativize_path(file_path)
 
         extra_messages = []
 
@@ -171,7 +171,6 @@ class CodeChecker:
             args = [self.args.python_interpreter, '-m', 'pycodestyle']
         elif check_type == 'unittest':
             append_file_path = False
-            rel_path_components = os.path.splitext(rel_path)[0].split('/')
             if fully_qualified_module_name is None:
                 raise ValueError(
                     'Could not identify the fully-qualified module name to use to invoke the '
@@ -187,6 +186,11 @@ class CodeChecker:
             args.append(file_path)
 
         subprocess_env = os.environ.copy()
+        if additional_sys_path:
+            for env_var_name in ['PYTHONPATH', 'MYPYPATH']:
+                subprocess_env[env_var_name] = prepend_path_entries(
+                    additional_sys_path, os.getenv(env_var_name)
+                )
 
         process = subprocess.Popen(
             args,
