@@ -48,26 +48,6 @@ def get_module_name_from_path(file_path: str) -> str:
     return os.path.splitext(os.path.basename(file_path))[0]
 
 
-def is_valid_mypy_path_entry(path_entry: str) -> bool:
-    """
-    We try to configure MYPYPATH to be the same as PYTHONPATH, but without any site-packages
-    directories. Otherwise, mypy gives us the following message:
-
-    .../site-packages is in the MYPYPATH. Please remove it.
-    See https://mypy.readthedocs.io/en/latest/running_mypy.html#how-mypy-handles-imports for
-    more info.
-
-    Also we don't allow other system-wide module paths there.
-    """
-    return (
-        os.path.basename(path_entry) != 'site-packages' and
-        '/site-packages/' not in path_entry and
-        # macOS-specific
-        '/Library/Frameworks/Python.framework/' not in path_entry and
-        not os.path.exists(os.path.join(path_entry, 'typing.py'))
-    )
-
-
 def prepend_path_entries(new_entries: List[str], existing_path: Optional[str]) -> str:
     """
     Prepend the given entries to the given PYTHONPATH or MYPYPATH-style string.
