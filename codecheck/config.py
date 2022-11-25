@@ -11,7 +11,7 @@
 # under the License.
 
 
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 import logging
 import re
@@ -26,7 +26,10 @@ from codecheck.constants import ALL_CHECK_TYPES
 class CodeCheckConfig:
     mypy_config_path: str
     disabled_check_types: Set[str]
-    included_regex_list: Optional[List[CompiledRE]]
+
+    # In each tuple, the first element is True if the pattern is included or False if it is
+    # excluded.
+    included_regex_list: Optional[List[Tuple[bool, CompiledRE]]]
 
     def __init__(self) -> None:
         self.mypy_config_path = 'mypy.ini'
@@ -44,22 +47,27 @@ class CodeCheckConfig:
 
         def get_multi_line_regex_list(
                 section: configparser.SectionProxy,
-                field_name: str) -> Optional[List[CompiledRE]]:
+                field_name: str) -> Optional[List[Tuple[bool, CompiledRE]]]:
             field_value = section.get(field_name)
             if field_value is None:
                 return None
             re_strings = field_value.strip().split('\n')
-            result: List[CompiledRE] = []
+            result: List[Tuple[bool, CompiledRE]] = []
             for re_str in re_strings:
                 re_str = re_str.strip()
                 if not re_str:
                     continue
+                # As a special syntax, if the line starts with "!", we treat it as an exclusion
+                # pattern.
+                is_included = not re_str.startswith('!')
+                if not is_included:
+                    re_str = re_str[1:]
                 try:
                     compiled_re = re.compile(re_str)
                 except Exception as ex:
                     logging.exception("Failed to compile regular expression: %s", re_str)
                     raise ex
-                result.append(compiled_re)
+                result.append((is_included, compiled_re))
 
             return result
 

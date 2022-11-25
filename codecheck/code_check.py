@@ -220,19 +220,30 @@ class CodeChecker:
             if self.args.verbose:
                 logging.info(f"Configuration file not found: {self.args.config_path}")
 
-    def filter_with_glob_patterns(
+    def filter_with_inclusion_exclusion_patterns(
             self, initial_list: List[str],
-            re_pattern_list: List[CompiledRE]) -> List[str]:
-        filtered_list = [
-            item for item in initial_list
-            if any(re_pattern.match(item) for re_pattern in re_pattern_list)
-        ]
+            re_pattern_list: List[Tuple[bool, CompiledRE]]) -> List[str]:
+        filtered_list = []
+        for item in initial_list:
+            should_include_item = False
+            # Try patterns one by one, and each pattern overrides the result of previous ones if
+            # it matches. So, we can include some files, then exclude some of those files, then
+            # again include some of the excluded files.
+            for is_inclusion_pattern, re_pattern in re_pattern_list:
+                if re_pattern.match(item):
+                    should_include_item = is_inclusion_pattern
+            if should_include_item:
+                filtered_list.append(item)
+
         if self.args.verbose:
             logging.info(
                 "Filtered %d files to %d using the regular expressions %s",
                 len(initial_list),
                 len(filtered_list),
-                [re_pattern.pattern for re_pattern in re_pattern_list])
+                [
+                    ('included' if is_inclusion_pattern else 'excluded', re_pattern.pattern)
+                    for is_inclusion_pattern, re_pattern in re_pattern_list
+                ])
         return filtered_list
 
     def get_rel_dir_name_for_report(self, file_path: str) -> str:
@@ -254,7 +265,7 @@ class CodeChecker:
         )).split('\n')
 
         if self.config.included_regex_list is not None:
-            file_list = self.filter_with_glob_patterns(
+            file_list = self.filter_with_inclusion_exclusion_patterns(
                 file_list, self.config.included_regex_list)
 
         input_file_paths = set([

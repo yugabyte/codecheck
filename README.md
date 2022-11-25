@@ -23,7 +23,7 @@ or
 python -m codecheck
 ```
 
-Sample output:
+Sample successful output:
 ```
 Checks by directory (relative to repo root):
     bin: 3
@@ -41,6 +41,37 @@ Checks by result:
 Elapsed time: 0.5 seconds
 
 All checks are successful
+```
+
+Sample failure output:
+
+```
+--------------------------------------------------------------------------------
+Check 'pycodestyle' for ~/code/codecheck/codecheck/config.py
+--------------------------------------------------------------------------------
+Command: python3 -m pycodestyle ~/code/codecheck/codecheck/config.py
+Exit code: 1
+
+Standard output:
+~/code/codecheck/codecheck/config.py:89:39: E222 multiple spaces after operator
+
+Checks by directory (relative to repo root):
+    bin: 3
+    codecheck: 39
+    root: 5
+Checks by type:
+    compile: 9
+    doctest: 8
+    import: 9
+    mypy: 9
+    pycodestyle: 9 (1 failed)
+    shellcheck: 3
+Checks by result:
+    failure: 1
+    success: 46
+Elapsed time: 1.2 seconds
+
+Some checks failed
 ```
 
 ## Check types
@@ -80,10 +111,15 @@ pycodestyle_config = <your_custom_pycodestyle_config_name>.ini
 shellcheck = off
 
 [files]
-# To restrict the set of files to check, specify one or more regular expressions:
+# To restrict the set of files to check, specify one or more regular expressions.
+# It is also possible to exclude previously included patterns by prefixing them with "!".
+# The order of regular expressions matter: all matches patterns are applied sequentially, and the
+# last pattern decides whether a particular file is included or excluded. One useful approach is
+# to specify more general patterns first, and then refine them using less general patterns.
 included_regex_list =
     ^.*[.]py$
     ^.*[.]sh$
+    !^.*/file_to_exclude[.]py$
 ```
 
 ## Customizing pycodestyle configuration
