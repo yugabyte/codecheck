@@ -13,7 +13,7 @@
 # under the License.
 
 """
-Checks code in this repository using various methods (MyPy, importing modules, syntax checks,
+Checks code in a repository using various methods (MyPy, importing modules, syntax checks,
 pycodestyle). Runs multiple checks in parallel.
 """
 
@@ -55,11 +55,23 @@ DEFAULT_CONF_FILE_NAME = 'codecheck.ini'
 
 NUM_REMAINING_CHECKS_TO_SHOW = 5
 
+INDENTATION_SEPARATOR = '\n' + ' ' * 4
 
-def print_stats(description: str, d: Dict[str, int]) -> None:
-    print("%s:\n    %s" % (
+
+def print_stats(
+        description: str,
+        d: Dict[str, int],
+        failure_counts: Dict[str, int] = {}) -> None:
+    print("%s:%s%s" % (
         description,
-        '\n    '.join('%s: %s' % (k, v) for k, v in sorted(d.items()))
+        INDENTATION_SEPARATOR,
+        INDENTATION_SEPARATOR.join(
+            '%s: %s%s' % (
+                k,
+                v,
+                ' (%d failed)' % failure_counts[k] if k in failure_counts else ''
+            ) for k, v in sorted(d.items())
+        )
     ))
 
 
@@ -90,7 +102,7 @@ class CodeCheckConfig:
 
         def get_multi_line_regex_list(
                 section: configparser.SectionProxy,
-                field_name: str) -> List[CompiledRE]:
+                field_name: str) -> Optional[List[CompiledRE]]:
             field_value = section.get(field_name)
             if field_value is None:
                 return None
@@ -294,6 +306,13 @@ class CodeChecker:
                 [re_pattern.pattern for re_pattern in re_pattern_list])
         return filtered_list
 
+    def get_rel_dir_name_for_report(self, file_path: str) -> str:
+        """
+        Returns the directory name (potentially with multiple path components) of the given file
+        relative to the repository root. Used in the "checks by directory" section of the report.
+        """
+        return os.path.dirname(self.relativize_path(file_path)) or 'root'
+
     def run(self) -> bool:
         self.parse_args()
         self.init_config()
@@ -336,8 +355,13 @@ class CodeChecker:
             )
 
         reporter = Reporter(line_width=80)
+
         checks_by_dir: Dict[str, int] = {}
+        checks_by_dir_failed: Dict[str, int] = {}
+
         checks_by_type: Dict[str, int] = {}
+        checks_by_type_failed: Dict[str, int] = {}
+
         checks_by_result: Dict[str, int] = {}
 
         is_success = True
@@ -348,7 +372,7 @@ class CodeChecker:
                 logging.info(f"Disabled check types: {sorted(self.config.disabled_check_types)}")
 
         for file_path in input_file_paths:
-            rel_dir = os.path.dirname(self.relativize_path(file_path)) or 'root'
+            rel_dir = self.get_rel_dir_name_for_report(file_path)
             for file_name_suffix, check_types in NAME_SUFFIX_TO_CHECK_TYPES.items():
                 for check_type in check_types:
                     if check_type in self.config.disabled_check_types:
@@ -380,6 +404,9 @@ class CodeChecker:
                         f"Check '{check_type}' for '{file_path}' generated an exception: "
                         f"{traceback.format_exc()}")
                     increment_counter(checks_by_result, 'failure')
+                    increment_counter(checks_by_type_failed, check_type)
+                    rel_dir = self.get_rel_dir_name_for_report(file_path)
+                    increment_counter(checks_by_dir_failed, check_type)
                     is_success = False
                 else:
                     reporter.print_check_result(check_result)
@@ -403,10 +430,11 @@ class CodeChecker:
                         remaining_checks_to_show)
 
         if checks_by_dir:
-            print_stats("Checks by directory (relative to repo root)", checks_by_dir)
+            print_stats("Checks by directory (relative to repo root)",
+                        checks_by_dir, checks_by_dir_failed)
 
         if checks_by_type:
-            print_stats("Checks by type", checks_by_type)
+            print_stats("Checks by type", checks_by_type, checks_by_type_failed)
 
         if checks_by_result:
             print_stats("Checks by result", checks_by_result)
