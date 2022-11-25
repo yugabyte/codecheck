@@ -15,6 +15,13 @@ from typing import Dict, Union, Set, List
 
 import os
 import sys
+import re
+
+
+if sys.version_info <= (3, 7):
+    CompiledRE = Any
+else:
+    CompiledRE = re.Pattern
 
 
 def increment_counter(d: Dict[str, int], key: str) -> None:

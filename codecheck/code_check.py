@@ -29,9 +29,6 @@ import logging
 import multiprocessing
 import re
 
-import configparser
-from configparser import ConfigParser
-
 from typing import List, Dict, Tuple, Set, Optional, Any
 
 from codecheck.check_result import CheckResult
@@ -39,19 +36,16 @@ from codecheck.reporter import Reporter
 from codecheck.util import (
     increment_counter,
     ensure_str_decoded,
-    combine_value_lists,
     get_module_name_from_path,
+    CompiledRE,
 )
-
-NAME_SUFFIX_TO_CHECK_TYPES: Dict[str, List[str]] = {
-    '.py': ['mypy', 'compile', 'pycodestyle', 'doctest', 'import'],
-    '.sh': ['shellcheck'],
-    '_test.py': ['unittest'],
-}
-
-ALL_CHECK_TYPES: List[str] = combine_value_lists(NAME_SUFFIX_TO_CHECK_TYPES)
-
-DEFAULT_CONF_FILE_NAME = 'codecheck.ini'
+from codecheck.config import CodeCheckConfig
+from codecheck.constants import (
+    DEFAULT_CONF_FILE_NAME,
+    ALL_CHECK_TYPES,
+    ALL_CHECKED_SUFFIXES,
+    NAME_SUFFIX_TO_CHECK_TYPES,
+)
 
 NUM_REMAINING_CHECKS_TO_SHOW = 5
 
@@ -73,71 +67,6 @@ def print_stats(
             ) for k, v in sorted(d.items())
         )
     ))
-
-
-if sys.version_info <= (3, 7):
-    CompiledRE = Any
-else:
-    CompiledRE = re.Pattern
-
-
-class CodeCheckConfig:
-    mypy_config_path: str
-    disabled_check_types: Set[str]
-    included_regex_list: Optional[List[CompiledRE]]
-
-    def __init__(self) -> None:
-        self.mypy_config_path = 'mypy.ini'
-        self.disabled_check_types = set()
-        self.included_regex_list = None
-
-    def load(self, file_path: str) -> None:
-        parsed_ini = ConfigParser()
-        parsed_ini.read(file_path)
-
-        def get_section(section_name: str) -> Optional[configparser.SectionProxy]:
-            if section_name in parsed_ini.sections():
-                return parsed_ini[section_name]
-            return None
-
-        def get_multi_line_regex_list(
-                section: configparser.SectionProxy,
-                field_name: str) -> Optional[List[CompiledRE]]:
-            field_value = section.get(field_name)
-            if field_value is None:
-                return None
-            re_strings = field_value.strip().split('\n')
-            result: List[CompiledRE] = []
-            for re_str in re_strings:
-                re_str = re_str.strip()
-                if not re_str:
-                    continue
-                try:
-                    compiled_re = re.compile(re_str)
-                except Exception as ex:
-                    logging.exception("Failed to compile regular expression: %s", re_str)
-                    raise ex
-                result.append(compiled_re)
-
-            return result
-
-        default_section = get_section('default')
-        if default_section:
-            mypy_config_path = default_section.get('mypy_config')
-            if mypy_config_path is not None:
-                self.mypy_config_path = mypy_config_path
-
-        checks_section = get_section('checks')
-        if checks_section:
-            for check_type in ALL_CHECK_TYPES:
-                is_check_enabled = checks_section.get(check_type)
-                if is_check_enabled is not None and not checks_section.getboolean(check_type):
-                    self.disabled_check_types.add(check_type)
-
-        files_section = get_section('files')
-        if files_section:
-            self.included_regex_list = get_multi_line_regex_list(
-                files_section, 'included_regex_list')
 
 
 class CodeChecker:
@@ -328,10 +257,9 @@ class CodeChecker:
             file_list = self.filter_with_glob_patterns(
                 file_list, self.config.included_regex_list)
 
-        all_checked_suffixes = tuple(sorted(NAME_SUFFIX_TO_CHECK_TYPES.keys()))
         input_file_paths = set([
             os.path.abspath(file_path) for file_path in file_list if (
-                file_path.endswith(all_checked_suffixes)
+                file_path.endswith(ALL_CHECKED_SUFFIXES)
             )
         ])
 
@@ -364,7 +292,7 @@ class CodeChecker:
 
         checks_by_result: Dict[str, int] = {}
 
-        is_success = True
+        overall_success = True
 
         check_inputs = []
         if self.args.verbose:
@@ -397,24 +325,29 @@ class CodeChecker:
             num_completed = 0
             for future in concurrent.futures.as_completed(future_to_check_input):
                 file_path, check_type = future_to_check_input[future]
+
+                this_check_succeeded = True
                 try:
                     check_result = future.result()
                 except Exception as exc:
                     print(
                         f"Check '{check_type}' for '{file_path}' generated an exception: "
                         f"{traceback.format_exc()}")
+                    this_check_succeeded = False
+                else:
+                    reporter.print_check_result(check_result)
+                    if check_result.returncode != 0:
+                        this_check_succeeded = False
+
+                if this_check_succeeded:
+                    increment_counter(checks_by_result, 'success')
+                else:
                     increment_counter(checks_by_result, 'failure')
                     increment_counter(checks_by_type_failed, check_type)
                     rel_dir = self.get_rel_dir_name_for_report(file_path)
                     increment_counter(checks_by_dir_failed, check_type)
-                    is_success = False
-                else:
-                    reporter.print_check_result(check_result)
-                    if check_result.returncode == 0:
-                        increment_counter(checks_by_result, 'success')
-                    else:
-                        increment_counter(checks_by_result, 'failure')
-                        is_success = False
+                    overall_success = False
+
                 num_completed += 1
                 pending_checks.remove((file_path, check_type))
                 if self.args.detailed_progress:
@@ -441,12 +374,12 @@ class CodeChecker:
 
         print("Elapsed time: %.1f seconds" % (time.time() - start_time))
         print()
-        if is_success:
+        if overall_success:
             print(f"All {num_checks} checks are successful")
         else:
             print(f"Some checks failed")
         print()
-        return is_success
+        return overall_success
 
 
 def main() -> None:
